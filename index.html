@@ -231,7 +231,23 @@ footer{margin-top:40px;border-top:1px solid var(--line);padding:26px 0 10px;colo
 .foot-brand .foot-name small{display:block;font-family:"Nunito",sans-serif;font-size:12.5px;font-weight:700;color:var(--muted);letter-spacing:.06em;text-transform:uppercase}
 .toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%) translateY(80px);background:var(--ink);color:var(--bg);font-weight:800;padding:12px 20px;border-radius:999px;z-index:60;transition:transform .3s;box-shadow:var(--shadow);max-width:92vw;text-align:center}
 .toast.show{transform:translateX(-50%) translateY(0)}
-@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}.blob{filter:blur(54px)}}
+
+/* === Movimiento Santa IA: crossfade · shared element · magnification · blur === */
+/* 1) CROSSFADE — al cambiar de categoría, la lista se desvanece y la nueva aparece */
+#grid,#empty{transition:opacity .15s ease}
+#grid.xf-out,#empty.xf-out{opacity:0}
+@keyframes fadePulse{from{opacity:.2}to{opacity:1}}
+.fade-pulse{animation:fadePulse .35s ease}
+/* 2) SHARED ELEMENT — clon del nombre del producto que viaja hasta el pedido */
+.fly-name{will-change:transform,opacity}
+/* 3) MAGNIFICATION — efecto dock; JS solo lo activa con cursor fino (hover:hover) */
+body.dock-on .navlink,body.dock-on .cart-btn,body.dock-on .hero-cta .btn,body.dock-on .cbtn,body.dock-on .success .btn{transition:transform .18s ease-out;will-change:transform}
+/* 4) BLUR — con el pedido abierto, el resto de la página se desenfoca y se atenúa */
+.wrap>*,.topbar,.layout>div{transition:filter .35s ease}
+.fx-blur{filter:blur(3.5px) brightness(.96) saturate(.94)}
+.cart-panel{transition:box-shadow .35s ease}
+body.cart-focus .cart-panel{box-shadow:0 26px 60px rgba(101,58,22,.30),0 0 0 2px rgba(201,106,82,.5),inset 0 1px 0 rgba(255,255,255,.9)}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}.blob{filter:blur(54px)}#grid,#empty,.wrap>*,.topbar,.layout>div,.cart-panel,body.dock-on .navlink,body.dock-on .cart-btn,body.dock-on .hero-cta .btn,body.dock-on .cbtn,body.dock-on .success .btn{transition:none}.fade-pulse{animation:none}}
 
 </style>
 </head>
@@ -494,8 +510,9 @@ function addToCart(id, btn){
   if(!cart[id]) cart[id]={qty:0, veg:false};
   cart[id].qty++;
   renderCart();
-  if(btn){ var old=btn.textContent; btn.textContent='✓ Agregado'; btn.classList.add('added'); setTimeout(function(){btn.textContent=old; btn.classList.remove('added')},900); }
   var item = findItem(id);
+  flyToCart(btn, item);
+  if(btn){ var old=btn.textContent; btn.textContent='✓ Agregado'; btn.classList.add('added'); setTimeout(function(){btn.textContent=old; btn.classList.remove('added')},900); }
   toast(item.name + ' agregado a tu pedido');
 }
 function cartTotal(){
@@ -545,7 +562,7 @@ function updatePayBtn(){
   var opts = document.querySelectorAll('.pay-opt');
   for(var i=0;i<opts.length;i++){ var inp = opts[i].querySelector('input'); opts[i].classList.toggle('sel', inp.checked); }
 }
-function goCart(){ document.getElementById('cartPanel').scrollIntoView({behavior:'smooth', block:'start'}); }
+function goCart(){ document.getElementById('cartPanel').scrollIntoView({behavior:'smooth', block:'start'}); setCartFocus(true); }
 function orderText(folio, payLabel){
   var name = document.getElementById('custName').value.trim();
   var time = document.getElementById('custTime').value;
@@ -606,6 +623,7 @@ function checkout(){
     'Folio ' + folio + ' · Pagas al recoger en tienda. Envía tu pedido por WhatsApp para que lo preparen.';
   document.getElementById('successDetail').textContent = text;
   document.getElementById('successWa').href = waUrl;
+  setCartFocus(false);
   var s = document.getElementById('success'); s.style.display='block';
   s.scrollIntoView({behavior:'smooth', block:'start'});
   toast('¡Pedido ' + folio + ' confirmado!');
@@ -628,14 +646,14 @@ document.getElementById('ccExp').addEventListener('input', function(){
 });
 document.getElementById('ccCvc').addEventListener('input', function(){ this.value = this.value.replace(/\D/g,'').slice(0,4); });
 // Filters
-document.getElementById('search').addEventListener('input', renderGrid);
+document.getElementById('search').addEventListener('input', function(){ crossfadeRender(110); });
 var pills = document.querySelectorAll('#pills .pill');
 var navCats = document.querySelectorAll('[data-navcat]');
 function setCategory(cat){
   activeCat = cat;
   for(var j=0;j<pills.length;j++) pills[j].classList.toggle('active', pills[j].getAttribute('data-cat')===cat);
   for(var n=0;n<navCats.length;n++) navCats[n].classList.toggle('active', navCats[n].getAttribute('data-navcat')===cat);
-  renderGrid();
+  crossfadeRender(160);
 }
 for(var i=0;i<pills.length;i++){ pills[i].addEventListener('click', function(){ setCategory(this.getAttribute('data-cat')); }); }
 for(var m=0;m<navCats.length;m++){ navCats[m].addEventListener('click', function(){ setCategory(this.getAttribute('data-navcat')); }); }
@@ -682,6 +700,133 @@ for(var b=0;b<badds.length;b++){ badds[b].addEventListener('click', function(){ 
   window.addEventListener('scroll', function(){ if(!ticking){ ticking = true; window.requestAnimationFrame(update); } }, {passive:true});
   window.addEventListener('resize', update);
   update();
+})();
+
+// ===== Movimiento Santa IA: crossfade · shared element · magnification · blur =====
+var reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+// 1) CROSSFADE — fade out de la lista actual, se re-renderiza y fade in (~300 ms en total)
+var xfTimer = null;
+function crossfadeRender(outMs){
+  var grid = document.getElementById('grid'), empty = document.getElementById('empty');
+  if(reduceMotion || !grid){ renderGrid(); return; }
+  grid.classList.add('xf-out'); if(empty) empty.classList.add('xf-out');
+  clearTimeout(xfTimer);
+  xfTimer = setTimeout(function(){
+    renderGrid();
+    grid.classList.remove('xf-out'); if(empty) empty.classList.remove('xf-out');
+  }, outMs || 160);
+}
+
+// 2) SHARED ELEMENT — un clon del nombre del producto viaja desde su tarjeta
+//    hasta el encabezado del panel del pedido (o al botón "Mi pedido" si el panel no se ve)
+function flyToCart(btn, item){
+  if(reduceMotion || !btn || !item) return;
+  var card = btn.closest ? (btn.closest('.pcard') || btn.closest('.bcard')) : null;
+  var nameEl = card ? card.querySelector('h3') : null;
+  if(!nameEl) return;
+  var panel = document.getElementById('cartPanel');
+  var panelTitle = panel ? panel.querySelector('h3') : null;
+  var cartBtn = document.querySelector('.cart-btn');
+  function inView(el){ if(!el) return false; var r = el.getBoundingClientRect(); return r.width>0 && r.bottom>80 && r.top<window.innerHeight-10 && r.right>0 && r.left<window.innerWidth; }
+  var target = inView(panelTitle) ? panelTitle : cartBtn;
+  if(!target) return;
+  var s = nameEl.getBoundingClientRect(); if(!s.width) return;
+  var t = target.getBoundingClientRect();
+  var cs = window.getComputedStyle(nameEl);
+  var clone = document.createElement('div');
+  clone.className = 'fly-name'; clone.setAttribute('aria-hidden','true');
+  clone.textContent = item.name;
+  clone.style.cssText = 'position:fixed;left:'+s.left+'px;top:'+s.top+'px;width:'+s.width+'px;margin:0;pointer-events:none;z-index:90;font-family:'+cs.fontFamily+';font-size:'+cs.fontSize+';font-weight:'+cs.fontWeight+';letter-spacing:'+cs.letterSpacing+';color:'+cs.color+';line-height:1.15;';
+  document.body.appendChild(clone);
+  var endScale = 0.6;
+  if(target===panelTitle){ var tf = parseFloat(window.getComputedStyle(panelTitle).fontSize), sf = parseFloat(cs.fontSize); if(tf && sf) endScale = tf/sf; }
+  var dx = (t.left + 4) - s.left;
+  var dy = (t.top + t.height/2 - s.height/2) - s.top;
+  var anim = clone.animate([
+    { transform:'translate(0px,0px) scale(1)', opacity:1 },
+    { transform:'translate('+(dx*0.72)+'px,'+(dy*0.72 - 26)+'px) scale('+((1+endScale)/2).toFixed(3)+')', opacity:1, offset:0.72 },
+    { transform:'translate('+dx+'px,'+dy+'px) scale('+endScale.toFixed(3)+')', opacity:0.1 }
+  ], { duration:580, easing:'cubic-bezier(.22,.75,.25,1)' });
+  var done = function(){ if(clone.parentNode) clone.parentNode.removeChild(clone); pulseEl(target); };
+  if(anim){ anim.onfinish = done; anim.oncancel = done; } else { done(); }
+}
+function pulseEl(el){
+  if(!el || !el.animate || reduceMotion) return;
+  el.animate([{transform:'scale(1)'},{transform:'scale(1.07)'},{transform:'scale(1)'}],{duration:320,easing:'ease-out'});
+}
+
+// 4) BLUR — al abrir el pedido, todo lo demás se desenfoca; clic fuera o Esc lo cierra
+var blurTargets = [];
+function setCartFocus(on){
+  var i, el;
+  if(on){
+    blurTargets = [];
+    var tb = document.querySelector('.topbar'); if(tb) blurTargets.push(tb);
+    var wrap = document.querySelector('.wrap');
+    if(wrap){ for(i=0;i<wrap.children.length;i++){ el = wrap.children[i]; if(el.classList && el.classList.contains('layout')){ if(el.firstElementChild) blurTargets.push(el.firstElementChild); } else { blurTargets.push(el); } } }
+    for(i=0;i<blurTargets.length;i++) blurTargets[i].classList.add('fx-blur');
+    document.body.classList.add('cart-focus');
+  } else {
+    for(i=0;i<blurTargets.length;i++) blurTargets[i].classList.remove('fx-blur');
+    blurTargets = [];
+    document.body.classList.remove('cart-focus');
+  }
+}
+document.addEventListener('click', function(e){
+  if(!document.body.classList.contains('cart-focus')) return;
+  var panel = document.getElementById('cartPanel');
+  if(panel && panel.contains(e.target)) return;
+  if(e.target.closest && (e.target.closest('.cart-btn') || e.target.closest('a[href="#cartPanel"]'))) return;
+  setCartFocus(false);
+});
+document.addEventListener('keydown', function(e){ if(e.key==='Escape') setCartFocus(false); });
+var cartNavLink = document.querySelector('.navlink[href="#cartPanel"]');
+if(cartNavLink) cartNavLink.addEventListener('click', function(){ setCartFocus(true); });
+// La navegación a Panadería hace aparecer su rejilla con un crossfade suave
+var bakeryNav = document.querySelector('.navlink[href="#panaderia"]');
+if(bakeryNav) bakeryNav.addEventListener('click', function(){
+  if(reduceMotion) return;
+  var b = document.querySelector('.bakery'); if(!b) return;
+  b.classList.remove('fade-pulse'); void b.offsetWidth; b.classList.add('fade-pulse');
+});
+
+// 3) MAGNIFICATION — efecto dock: los botones crecen según la cercanía del cursor.
+//    Solo con cursor fino (ratón/trackpad); en táctil no se activa.
+(function(){
+  if(reduceMotion) return;
+  if(!window.matchMedia || !window.matchMedia('(hover: hover) and (pointer: fine)').matches) return;
+  document.body.classList.add('dock-on');
+  function dock(container, selector, maxScale, range){
+    if(!container) return;
+    var items = Array.prototype.slice.call(container.querySelectorAll(selector));
+    if(!items.length) return;
+    var raf = null, mx = 0, my = 0;
+    function apply(){
+      raf = null;
+      for(var i=0;i<items.length;i++){
+        var el = items[i], r = el.getBoundingClientRect();
+        if(!r.width){ el.style.transform=''; continue; }
+        var dx = Math.max(r.left - mx, 0, mx - r.right);
+        var dy = Math.max(r.top - my, 0, my - r.bottom);
+        var d = Math.sqrt(dx*dx + dy*dy);
+        var f = Math.max(0, 1 - d/range);
+        var s = 1 + (maxScale-1) * f * f;
+        el.style.transform = s > 1.005 ? 'scale(' + s.toFixed(3) + ')' : '';
+      }
+    }
+    container.addEventListener('mousemove', function(e){ mx = e.clientX; my = e.clientY; if(!raf) raf = window.requestAnimationFrame(apply); });
+    container.addEventListener('mouseleave', function(){ for(var i=0;i<items.length;i++) items[i].style.transform=''; });
+  }
+  dock(document.querySelector('.mainnav-in'), '.navlink', 1.18, 100);
+  dock(document.querySelector('.topbar-in'), '.cart-btn', 1.12, 90);
+  dock(document.querySelector('.hero-cta'), '.btn', 1.12, 90);
+  // Se escucha desde cada tarjeta (.info-card), no solo desde .contact-btns:
+  // en la tarjeta de Ubicación el contenedor envuelve únicamente el botón
+  // "Cómo llegar", así que fuera de él no se detectaba la cercanía del cursor.
+  var ctns = document.querySelectorAll('.info-card');
+  for(var i=0;i<ctns.length;i++) dock(ctns[i], '.cbtn', 1.06, 70);
+  dock(document.getElementById('success'), '.btn', 1.1, 90);
 })();
 
 openStatus();
